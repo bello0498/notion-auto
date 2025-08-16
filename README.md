@@ -1,8 +1,8 @@
-# notion-auto-save (Vercel)
+# notion-auto (Vercel)
 
-서버 URL 예: `https://<your-project>.vercel.app/api/save`
+POST `https://<your-project>.vercel.app/api/save`
 
-### POST Body (JSON)
+### Body (JSON)
 ```json
 {
   "title": "디자인 리뷰 메모",
