@@ -1,0 +1,12 @@
+{
+  "name": "notion-auto",
+  "version": "1.0.0",
+  "description": "Serverless API to save GPT outputs into Notion DB via Vercel",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.2.14"
+  }
+}
