@@ -1,7 +1,7 @@
 // Vercel Serverless Function (CommonJS)
 const { Client } = require("@notionhq/client");
 
-// ----- helpers -----
+// ----- helpers ----- //
 const normalize = (s) => String(s || "").trim().toLowerCase();
 
 const NAME_CANDIDATES = ["name", "title", "제목"];
