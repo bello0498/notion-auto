@@ -1,7 +1,7 @@
 // Vercel Serverless Function (CommonJS)
 const { Client } = require("@notionhq/client");
 
-// ----- helpers ----- 
+// ----- helpers -----
 const normalize = (s) => String(s || "").trim().toLowerCase();
 
 const NAME_CANDIDATES = ["name", "title", "제목"];
@@ -71,92 +71,30 @@ function makePropertyMapper(dbProps) {
   return { titleKey, urlKey, dateKey, tagsKey, statusKey };
 }
 
-// ----- 페이지 검색 함수 추가 -----
-async function findPageByTitle(notion, databaseId, title) {
-  try {
-    const response = await notion.databases.query({
-      database_id: databaseId,
-      filter: {
-        property: "title", // 또는 실제 title 속성 이름
-        title: {
-          equals: title
-        }
-      }
-    });
-    
-    return response.results.length > 0 ? response.results[0].id : null;
-  } catch (error) {
-    console.error("페이지 검색 오류:", error);
-    return null;
-  }
-}
-
 // ----- handler -----
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  if (!["POST", "GET"].includes(req.method)) {
-    return res.status(405).json({ error: "Only POST and GET allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Only POST allowed" });
   }
 
-  const { NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_PAGE_ID } = process.env;
-  if (!NOTION_TOKEN) {
-    return res.status(500).json({ error: "Missing NOTION_TOKEN environment variable" });
+  const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
+  if (!NOTION_TOKEN || !NOTION_DATABASE_ID) {
+    return res.status(500).json({ error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID environment variables" });
   }
-  if (!NOTION_DATABASE_ID && !NOTION_PAGE_ID) {
-    return res.status(500).json({ error: "Missing NOTION_DATABASE_ID or NOTION_PAGE_ID environment variable" });
-  }
+
+  const body = await readJSON(req);
+  const { mode, title, content, url, date, tags, status, pageId } = body || {};
 
   const notion = new Client({ auth: NOTION_TOKEN });
 
   try {
-    // GET 요청: 페이지 목록 조회 (DATABASE_ID가 있을 때만)
-    if (req.method === "GET") {
-      if (!NOTION_DATABASE_ID) {
-        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for GET requests" });
-      }
-
-      const { title } = req.query;
-      
-      if (title) {
-        // 특정 타이틀로 페이지 검색
-        const pageId = await findPageByTitle(notion, NOTION_DATABASE_ID, title);
-        if (pageId) {
-          return res.status(200).json({ ok: true, pageId });
-        } else {
-          return res.status(404).json({ error: "Page not found" });
-        }
-      } else {
-        // 전체 페이지 목록 조회
-        const response = await notion.databases.query({
-          database_id: NOTION_DATABASE_ID,
-          page_size: 50
-        });
-        
-        const pages = response.results.map(page => ({
-          id: page.id,
-          title: page.properties?.title?.title?.[0]?.text?.content || 
-                 page.properties?.Name?.title?.[0]?.text?.content ||
-                 page.properties?.제목?.title?.[0]?.text?.content || "제목 없음",
-          url: page.url
-        }));
-        
-        return res.status(200).json({ ok: true, pages });
-      }
-    }
-
-    // POST 요청: 데이터 저장
-    const body = await readJSON(req);
-    const { mode, title, content, url, date, tags, status, pageId } = body || {};
-
     if (mode === "db") {
       // 🔹 DB 저장 모드
-      if (!NOTION_DATABASE_ID) {
-        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for DB mode" });
-      }
       if (!title) return res.status(400).json({ error: "Missing 'title' in request body (DB mode)" });
 
       const db = await notion.databases.retrieve({ database_id: NOTION_DATABASE_ID });
@@ -195,60 +133,20 @@ module.exports = async (req, res) => {
     }
 
     if (mode === "page") {
-      // 🔹 Page 저장 모드 - NOTION_PAGE_ID 또는 pageId 파라미터 사용
-      const targetPageId = pageId || NOTION_PAGE_ID;
-      if (!targetPageId) {
-        return res.status(400).json({ error: "Missing 'pageId' in request body or NOTION_PAGE_ID environment variable" });
-      }
+      // 🔹 Page 저장 모드
+      if (!pageId) return res.status(400).json({ error: "Missing 'pageId' in request body (Page mode)" });
       if (!content) return res.status(400).json({ error: "Missing 'content' in request body (Page mode)" });
 
       const children = toBlocks(content).slice(0, 100);
       await notion.blocks.children.append({
-        block_id: targetPageId,
+        block_id: pageId,
         children
       });
 
-      return res.status(200).json({ ok: true, pageId: targetPageId });
+      return res.status(200).json({ ok: true, pageId });
     }
 
-    if (mode === "simple") {
-      // 🔹 간단 저장 모드 - NOTION_PAGE_ID에 바로 저장 (pageId나 title 불필요)
-      if (!NOTION_PAGE_ID) {
-        return res.status(500).json({ error: "NOTION_PAGE_ID environment variable is required for simple mode" });
-      }
-      if (!content) return res.status(400).json({ error: "Missing 'content' in request body (Simple mode)" });
-
-      // title이 있으면 헤더로 추가
-      let fullContent = content;
-      if (title) {
-        fullContent = `# ${title}\n\n${content}`;
-      }
-
-      const children = toBlocks(fullContent).slice(0, 100);
-      await notion.blocks.children.append({
-        block_id: NOTION_PAGE_ID,
-        children
-      });
-
-      return res.status(200).json({ ok: true, pageId: NOTION_PAGE_ID });
-    }
-
-    if (mode === "find") {
-      // 🔹 페이지 찾기 모드 - DATABASE_ID가 있을 때만 사용 가능
-      if (!NOTION_DATABASE_ID) {
-        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for find mode" });
-      }
-      if (!title) return res.status(400).json({ error: "Missing 'title' in request body (Find mode)" });
-
-      const pageId = await findPageByTitle(notion, NOTION_DATABASE_ID, title);
-      if (pageId) {
-        return res.status(200).json({ ok: true, pageId });
-      } else {
-        return res.status(404).json({ error: "Page not found", title });
-      }
-    }
-
-    return res.status(400).json({ error: "Invalid 'mode'. Use 'db', 'page', 'simple', or 'find'." });
+    return res.status(400).json({ error: "Invalid 'mode'. Use 'db' or 'page'." });
   } catch (err) {
     console.error("Save API error:", err?.response?.data || err);
     const status = err?.status || err?.response?.status || 500;
