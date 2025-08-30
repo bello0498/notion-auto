@@ -1,0 +1,122 @@
+{
+  "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Notion Auto Save API",
+    "version": "1.2.0",
+    "description": "Create a Notion database item and/or a child page under a parent page."
+  },
+  "servers": [
+    { "url": "https://notion-auto.vercel.app", "description": "Production" }
+  ],
+  "paths": {
+    "/api/save": {
+      "post": {
+        "operationId": "saveToNotion",
+        "summary": "Save content into Notion (DB, Page, or Both)",
+        "description": "Save text into Notion Database, Page, or both depending on mode.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["mode"],
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": ["db", "page", "both"],
+                    "description": "저장 모드 선택 (db: DB에 저장, page: Page에 저장, both: 둘 다 저장)"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "제목 (없으면 content 첫 줄 또는 자동 생성)"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "본문 (Markdown 일부 지원: #, ##, ###, - )"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "(DB 모드 전용) URL 속성 값"
+                  },
+                  "date": {
+                    "type": "string",
+                    "description": "(DB 모드 전용) 날짜 (YYYY-MM-DD 또는 ISO datetime)"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "(DB 모드 전용) 태그 목록 (multi_select)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "(DB 모드 전용) 상태 값 (Select 권장)"
+                  },
+                  "pageId": {
+                    "type": "string",
+                    "description": "(Page 모드 전용, 선택) 상위 Page ID. 없으면 env NOTION_PAGE_ID 사용"
+                  },
+                  "databaseId": {
+                    "type": "string",
+                    "description": "(DB 모드 전용, 선택) DB ID override. 없으면 env NOTION_DATABASE_ID 사용"
+                  }
+                },
+                "example": {
+                  "mode": "both",
+                  "title": "Both Save Test",
+                  "content": "### One shot\\n- DB + child page",
+                  "status": "In progress"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공적으로 저장됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ok", "mode", "results"],
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "mode": { "type": "string", "enum": ["db", "page", "both"] },
+                    "results": {
+                      "type": "object",
+                      "properties": {
+                        "db": { "type": "string", "description": "DB에 생성된 pageId" },
+                        "page": { "type": "string", "description": "Page에 생성된 pageId" }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "dbSuccess": {
+                    "summary": "DB only success",
+                    "value": { "ok": true, "mode": "db", "results": { "db": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" } }
+                  },
+                  "pageSuccess": {
+                    "summary": "Page only success",
+                    "value": { "ok": true, "mode": "page", "results": { "page": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" } }
+                  },
+                  "bothSuccess": {
+                    "summary": "Both success",
+                    "value": { "ok": true, "mode": "both", "results": { "db": "…", "page": "…" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "잘못된 요청 (예: mode 누락, 타입 불일치)" },
+          "500": { "description": "서버 오류 또는 Notion API 오류" }
+        }
+      }
+    }
+  }
+}
