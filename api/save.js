@@ -58,17 +58,29 @@ module.exports = async (req, res) => {
       }
       results.db = page.id;
     }
-
+    
     // 페이지 저장
     if (mode === "page" || mode === "both") {
-      const pageId = toUuid(NOTION_PAGE_ID);
+      const pageId = toUuid(body?.pageId || NOTION_PAGE_ID);
       if (!content) return res.status(400).json({ error: "Missing 'content' for page mode" });
-      await notion.blocks.children.append({
+
+      // 1) 하위 페이지를 생성하고 싶을 경우
+      const newPageTitle = body?.title || "자동 생성된 하위 페이지";
+      const child = {
+        object: "block",
+        type: "child_page",
+        child_page: { title: newPageTitle }
+      };
+
+      // 2) 하위 페이지를 부모에 추가
+      const resp = await notion.blocks.children.append({
         block_id: pageId,
-        children: toBlocks(content)
+        children: [child]
       });
-      results.page = pageId;
+
+      results.page = resp;
     }
+
 
     return res.status(200).json({ ok: true, mode, results });
   } catch (err) {
