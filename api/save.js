@@ -30,14 +30,14 @@ function toBlocks(raw = "") {
 
   while (i < lines.length) {
     const line = lines[i];
-    
-    // 빈 줄 건너뛰기
+
+    // 1️⃣ 빈 줄 건너뛰기
     if (!line.trim()) {
       i++;
       continue;
     }
 
-    // 1️⃣ 헤딩 처리
+    // 2️⃣ 헤딩 처리 (H1, H2, H3)
     if (line.startsWith("### ")) {
       blocks.push({
         type: "heading_3",
@@ -63,18 +63,15 @@ function toBlocks(raw = "") {
       continue;
     }
 
-    // 2️⃣ 코드블록 처리
+    // 3️⃣ 코드 블록
     if (line.startsWith("```")) {
       const language = line.slice(3).trim() || "plain text";
       const codeLines = [];
-      i++; // ``` 다음 줄부터 시작
-      
-      // 종료 ``` 찾을 때까지 수집
+      i++;
       while (i < lines.length && !lines[i].startsWith("```")) {
         codeLines.push(lines[i]);
         i++;
       }
-      
       blocks.push({
         type: "code",
         code: {
@@ -82,73 +79,63 @@ function toBlocks(raw = "") {
           language: language.toLowerCase()
         }
       });
-      i++; // 종료 ``` 건너뛰기
+      i++;
       continue;
     }
 
-    // 3️⃣ 테이블 처리 🔥
+    // 4️⃣ 테이블 (Markdown)
     if (line.includes("|") && lines[i + 1]?.includes("|") && lines[i + 1].includes("-")) {
       const tableLines = [line];
-      const headerSeparator = lines[i + 1]; // |------|------|
-      i += 2; // 헤더와 구분선 건너뛰기
-      
-      // 테이블 행들 수집
+      i += 2;
       while (i < lines.length && lines[i].includes("|")) {
         tableLines.push(lines[i]);
         i++;
       }
-      
-      // 테이블 파싱
+
       const parseTableRow = (row) => {
         return row.split("|")
           .map(cell => cell.trim())
-          .filter(cell => cell.length > 0); // 빈 셀 제거
+          .filter(cell => cell.length > 0);
       };
-      
+
       const headers = parseTableRow(tableLines[0]);
       const rows = tableLines.slice(1).map(parseTableRow);
-      
-      // Notion 테이블 블록 생성
-      if (headers.length > 0 && rows.length > 0) {
-        const tableWidth = Math.max(headers.length, ...rows.map(row => row.length));
-        const tableChildren = [];
-        
-        // 헤더 행
+      const tableWidth = Math.max(headers.length, ...rows.map(row => row.length));
+      const tableChildren = [];
+
+      tableChildren.push({
+        type: "table_row",
+        table_row: {
+          cells: headers.slice(0, tableWidth).map(header => [
+            { type: "text", text: { content: header || "" } }
+          ])
+        }
+      });
+
+      rows.forEach(row => {
         tableChildren.push({
           type: "table_row",
           table_row: {
-            cells: headers.slice(0, tableWidth).map(header => [
-              { type: "text", text: { content: header || "" } }
+            cells: Array(tableWidth).fill(0).map((_, idx) => [
+              { type: "text", text: { content: row[idx] || "" } }
             ])
           }
         });
-        
-        // 데이터 행들
-        rows.forEach(row => {
-          tableChildren.push({
-            type: "table_row",
-            table_row: {
-              cells: Array(tableWidth).fill(0).map((_, idx) => [
-                { type: "text", text: { content: row[idx] || "" } }
-              ])
-            }
-          });
-        });
-        
-        blocks.push({
-          type: "table",
-          table: {
-            table_width: tableWidth,
-            has_column_header: true,
-            has_row_header: false,
-            children: tableChildren
-          }
-        });
-      }
+      });
+
+      blocks.push({
+        type: "table",
+        table: {
+          table_width: tableWidth,
+          has_column_header: true,
+          has_row_header: false,
+          children: tableChildren
+        }
+      });
       continue;
     }
 
-    // 4️⃣ 체크리스트 처리
+    // 5️⃣ 체크리스트
     if (/^[-*]\s+\[([ x])\]\s+/.test(line)) {
       const isChecked = line.includes("[x]");
       const text = line.replace(/^[-*]\s+\[([ x])\]\s+/, "");
@@ -163,7 +150,7 @@ function toBlocks(raw = "") {
       continue;
     }
 
-    // 5️⃣ 번호 리스트 처리
+    // 6️⃣ 번호 리스트
     if (/^\d+\.\s+/.test(line)) {
       blocks.push({
         type: "numbered_list_item",
@@ -175,7 +162,7 @@ function toBlocks(raw = "") {
       continue;
     }
 
-    // 6️⃣ 불릿 리스트 처리
+    // 7️⃣ 불릿 리스트
     if (/^[-*]\s+/.test(line)) {
       blocks.push({
         type: "bulleted_list_item",
@@ -187,7 +174,7 @@ function toBlocks(raw = "") {
       continue;
     }
 
-    // 7️⃣ 인용문 처리
+    // 8️⃣ 인용문
     if (line.startsWith("> ")) {
       blocks.push({
         type: "quote",
@@ -199,17 +186,137 @@ function toBlocks(raw = "") {
       continue;
     }
 
-    // 8️⃣ 구분선 처리
+    // 9️⃣ 구분선
     if (line.trim() === "---" || line.trim() === "***") {
+      blocks.push({ type: "divider", divider: {} });
+      i++;
+      continue;
+    }
+
+    // 🔟 Callout (📌로 시작)
+    if (line.startsWith("> 📌")) {
       blocks.push({
-        type: "divider",
-        divider: {}
+        type: "callout",
+        callout: {
+          icon: { type: "emoji", emoji: "📌" },
+          rich_text: [{ type: "text", text: { content: line.slice(4).trim() } }],
+          color: "default"
+        }
       });
       i++;
       continue;
     }
 
-    // 9️⃣ 기본 문단 처리
+    // 1️⃣1️⃣ Toggle
+    if (line.startsWith("!! ")) {
+      const toggleContent = line.slice(3).trim();
+      blocks.push({
+        type: "toggle",
+        toggle: {
+          rich_text: [{ type: "text", text: { content: toggleContent } }],
+          children: []
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣2️⃣ Synced Block (/sync ~ /endsync)
+    if (line === "/sync") {
+      const syncedChildren = [];
+      i++;
+      while (i < lines.length && lines[i] !== "/endsync") {
+        syncedChildren.push({
+          type: "paragraph",
+          paragraph: {
+            rich_text: [{ type: "text", text: { content: lines[i] } }]
+          }
+        });
+        i++;
+      }
+      blocks.push({
+        type: "synced_block",
+        synced_block: {
+          synced_from: null,
+          children: syncedChildren
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣3️⃣ Image
+    const imageMatch = line.match(/!\[.*?\]\((.*?)\)/);
+    if (imageMatch) {
+      blocks.push({
+        type: "image",
+        image: {
+          type: "external",
+          external: { url: imageMatch[1] }
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣4️⃣ Video
+    if (line.startsWith("!!영상!!(") && line.endsWith(")")) {
+      const url = line.slice(7, -1);
+      blocks.push({
+        type: "video",
+        video: {
+          type: "external",
+          external: { url }
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣5️⃣ File
+    if (line.startsWith("!!파일!!(") && line.endsWith(")")) {
+      const url = line.slice(7, -1);
+      blocks.push({
+        type: "file",
+        file: {
+          type: "external",
+          external: { url }
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣6️⃣ Bookmark
+    const bookmarkMatch = line.match(/^<(.+?)>$/);
+    if (bookmarkMatch) {
+      blocks.push({
+        type: "bookmark",
+        bookmark: { url: bookmarkMatch[1] }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣7️⃣ Table of Contents
+    if (line.trim() === "[목차]") {
+      blocks.push({ type: "table_of_contents", table_of_contents: {} });
+      i++;
+      continue;
+    }
+
+    // 1️⃣8️⃣ Embed
+    if (line.startsWith("!!임베드!!(") && line.endsWith(")")) {
+      const url = line.slice(9, -1);
+      blocks.push({
+        type: "embed",
+        embed: { url }
+      });
+      i++;
+      continue;
+    }
+
+    // 1️⃣9️⃣ 기본 문단
     blocks.push({
       type: "paragraph",
       paragraph: { rich_text: [{ type: "text", text: { content: line } }] }
@@ -221,6 +328,7 @@ function toBlocks(raw = "") {
     ? blocks.slice(0, 100)
     : [{ type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: "" } }] } }];
 }
+
 
 async function readJSON(req) {
   if (req.body && typeof req.body === "object") return req.body;
