@@ -102,16 +102,23 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: "Only POST and GET allowed" });
   }
 
-  const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
-  if (!NOTION_TOKEN || !NOTION_DATABASE_ID) {
-    return res.status(500).json({ error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID environment variables" });
+  const { NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_PAGE_ID } = process.env;
+  if (!NOTION_TOKEN) {
+    return res.status(500).json({ error: "Missing NOTION_TOKEN environment variable" });
+  }
+  if (!NOTION_DATABASE_ID && !NOTION_PAGE_ID) {
+    return res.status(500).json({ error: "Missing NOTION_DATABASE_ID or NOTION_PAGE_ID environment variable" });
   }
 
   const notion = new Client({ auth: NOTION_TOKEN });
 
   try {
-    // GET 요청: 페이지 목록 조회
+    // GET 요청: 페이지 목록 조회 (DATABASE_ID가 있을 때만)
     if (req.method === "GET") {
+      if (!NOTION_DATABASE_ID) {
+        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for GET requests" });
+      }
+
       const { title } = req.query;
       
       if (title) {
@@ -147,6 +154,9 @@ module.exports = async (req, res) => {
 
     if (mode === "db") {
       // 🔹 DB 저장 모드
+      if (!NOTION_DATABASE_ID) {
+        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for DB mode" });
+      }
       if (!title) return res.status(400).json({ error: "Missing 'title' in request body (DB mode)" });
 
       const db = await notion.databases.retrieve({ database_id: NOTION_DATABASE_ID });
@@ -185,21 +195,49 @@ module.exports = async (req, res) => {
     }
 
     if (mode === "page") {
-      // 🔹 Page 저장 모드 - title 검증 제거
-      if (!pageId) return res.status(400).json({ error: "Missing 'pageId' in request body (Page mode)" });
+      // 🔹 Page 저장 모드 - NOTION_PAGE_ID 또는 pageId 파라미터 사용
+      const targetPageId = pageId || NOTION_PAGE_ID;
+      if (!targetPageId) {
+        return res.status(400).json({ error: "Missing 'pageId' in request body or NOTION_PAGE_ID environment variable" });
+      }
       if (!content) return res.status(400).json({ error: "Missing 'content' in request body (Page mode)" });
 
       const children = toBlocks(content).slice(0, 100);
       await notion.blocks.children.append({
-        block_id: pageId,
+        block_id: targetPageId,
         children
       });
 
-      return res.status(200).json({ ok: true, pageId });
+      return res.status(200).json({ ok: true, pageId: targetPageId });
+    }
+
+    if (mode === "simple") {
+      // 🔹 간단 저장 모드 - NOTION_PAGE_ID에 바로 저장 (pageId나 title 불필요)
+      if (!NOTION_PAGE_ID) {
+        return res.status(500).json({ error: "NOTION_PAGE_ID environment variable is required for simple mode" });
+      }
+      if (!content) return res.status(400).json({ error: "Missing 'content' in request body (Simple mode)" });
+
+      // title이 있으면 헤더로 추가
+      let fullContent = content;
+      if (title) {
+        fullContent = `# ${title}\n\n${content}`;
+      }
+
+      const children = toBlocks(fullContent).slice(0, 100);
+      await notion.blocks.children.append({
+        block_id: NOTION_PAGE_ID,
+        children
+      });
+
+      return res.status(200).json({ ok: true, pageId: NOTION_PAGE_ID });
     }
 
     if (mode === "find") {
-      // 🔹 페이지 찾기 모드 추가
+      // 🔹 페이지 찾기 모드 - DATABASE_ID가 있을 때만 사용 가능
+      if (!NOTION_DATABASE_ID) {
+        return res.status(500).json({ error: "NOTION_DATABASE_ID is required for find mode" });
+      }
       if (!title) return res.status(400).json({ error: "Missing 'title' in request body (Find mode)" });
 
       const pageId = await findPageByTitle(notion, NOTION_DATABASE_ID, title);
@@ -210,7 +248,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    return res.status(400).json({ error: "Invalid 'mode'. Use 'db', 'page', or 'find'." });
+    return res.status(400).json({ error: "Invalid 'mode'. Use 'db', 'page', 'simple', or 'find'." });
   } catch (err) {
     console.error("Save API error:", err?.response?.data || err);
     const status = err?.status || err?.response?.status || 500;
