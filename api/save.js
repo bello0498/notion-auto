@@ -22,39 +22,201 @@ function deriveTitle(title, content) {
   return `Auto Note ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Markdown-ish -> Notion blocks
+// 확장된 Markdown-ish -> Notion blocks 변환기
 function toBlocks(raw = "") {
   const lines = String(raw).split("\n").map((l) => l.trimEnd());
   const blocks = [];
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // 빈 줄 건너뛰기
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // 1️⃣ 헤딩 처리
     if (line.startsWith("### ")) {
       blocks.push({
         type: "heading_3",
-        heading_3: { rich_text: [{ type: "text", text: { content: line.slice(4) } }] },
+        heading_3: { rich_text: [{ type: "text", text: { content: line.slice(4) } }] }
       });
-    } else if (line.startsWith("## ")) {
+      i++;
+      continue;
+    }
+    if (line.startsWith("## ")) {
       blocks.push({
         type: "heading_2",
-        heading_2: { rich_text: [{ type: "text", text: { content: line.slice(3) } }] },
+        heading_2: { rich_text: [{ type: "text", text: { content: line.slice(3) } }] }
       });
-    } else if (line.startsWith("# ")) {
+      i++;
+      continue;
+    }
+    if (line.startsWith("# ")) {
       blocks.push({
         type: "heading_1",
-        heading_1: { rich_text: [{ type: "text", text: { content: line.slice(2) } }] },
+        heading_1: { rich_text: [{ type: "text", text: { content: line.slice(2) } }] }
       });
-    } else if (/^[-*]\s+/.test(line)) {
+      i++;
+      continue;
+    }
+
+    // 2️⃣ 코드블록 처리
+    if (line.startsWith("```")) {
+      const language = line.slice(3).trim() || "plain text";
+      const codeLines = [];
+      i++; // ``` 다음 줄부터 시작
+      
+      // 종료 ``` 찾을 때까지 수집
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      
+      blocks.push({
+        type: "code",
+        code: {
+          rich_text: [{ type: "text", text: { content: codeLines.join("\n") } }],
+          language: language.toLowerCase()
+        }
+      });
+      i++; // 종료 ``` 건너뛰기
+      continue;
+    }
+
+    // 3️⃣ 테이블 처리 🔥
+    if (line.includes("|") && lines[i + 1]?.includes("|") && lines[i + 1].includes("-")) {
+      const tableLines = [line];
+      const headerSeparator = lines[i + 1]; // |------|------|
+      i += 2; // 헤더와 구분선 건너뛰기
+      
+      // 테이블 행들 수집
+      while (i < lines.length && lines[i].includes("|")) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      
+      // 테이블 파싱
+      const parseTableRow = (row) => {
+        return row.split("|")
+          .map(cell => cell.trim())
+          .filter(cell => cell.length > 0); // 빈 셀 제거
+      };
+      
+      const headers = parseTableRow(tableLines[0]);
+      const rows = tableLines.slice(1).map(parseTableRow);
+      
+      // Notion 테이블 블록 생성
+      if (headers.length > 0 && rows.length > 0) {
+        const tableWidth = Math.max(headers.length, ...rows.map(row => row.length));
+        const tableChildren = [];
+        
+        // 헤더 행
+        tableChildren.push({
+          type: "table_row",
+          table_row: {
+            cells: headers.slice(0, tableWidth).map(header => [
+              { type: "text", text: { content: header || "" } }
+            ])
+          }
+        });
+        
+        // 데이터 행들
+        rows.forEach(row => {
+          tableChildren.push({
+            type: "table_row",
+            table_row: {
+              cells: Array(tableWidth).fill(0).map((_, idx) => [
+                { type: "text", text: { content: row[idx] || "" } }
+              ])
+            }
+          });
+        });
+        
+        blocks.push({
+          type: "table",
+          table: {
+            table_width: tableWidth,
+            has_column_header: true,
+            has_row_header: false,
+            children: tableChildren
+          }
+        });
+      }
+      continue;
+    }
+
+    // 4️⃣ 체크리스트 처리
+    if (/^[-*]\s+\[([ x])\]\s+/.test(line)) {
+      const isChecked = line.includes("[x]");
+      const text = line.replace(/^[-*]\s+\[([ x])\]\s+/, "");
+      blocks.push({
+        type: "to_do",
+        to_do: {
+          rich_text: [{ type: "text", text: { content: text } }],
+          checked: isChecked
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 5️⃣ 번호 리스트 처리
+    if (/^\d+\.\s+/.test(line)) {
+      blocks.push({
+        type: "numbered_list_item",
+        numbered_list_item: {
+          rich_text: [{ type: "text", text: { content: line.replace(/^\d+\.\s+/, "") } }]
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 6️⃣ 불릿 리스트 처리
+    if (/^[-*]\s+/.test(line)) {
       blocks.push({
         type: "bulleted_list_item",
-        bulleted_list_item: { rich_text: [{ type: "text", text: { content: line.replace(/^[-*]\s+/, "") } }] },
+        bulleted_list_item: {
+          rich_text: [{ type: "text", text: { content: line.replace(/^[-*]\s+/, "") } }]
+        }
       });
-    } else {
-      blocks.push({
-        type: "paragraph",
-        paragraph: { rich_text: [{ type: "text", text: { content: line } }] },
-      });
+      i++;
+      continue;
     }
+
+    // 7️⃣ 인용문 처리
+    if (line.startsWith("> ")) {
+      blocks.push({
+        type: "quote",
+        quote: {
+          rich_text: [{ type: "text", text: { content: line.slice(2) } }]
+        }
+      });
+      i++;
+      continue;
+    }
+
+    // 8️⃣ 구분선 처리
+    if (line.trim() === "---" || line.trim() === "***") {
+      blocks.push({
+        type: "divider",
+        divider: {}
+      });
+      i++;
+      continue;
+    }
+
+    // 9️⃣ 기본 문단 처리
+    blocks.push({
+      type: "paragraph",
+      paragraph: { rich_text: [{ type: "text", text: { content: line } }] }
+    });
+    i++;
   }
+
   return blocks.length
     ? blocks.slice(0, 100)
     : [{ type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: "" } }] } }];
