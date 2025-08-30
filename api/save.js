@@ -1,17 +1,14 @@
-// Vercel Serverless Function (CommonJS)
-const { Client } = require("@notionhq/client");
+import { Client } from "@notionhq/client";
 
 // ----- helpers -----
 const normalize = (s) => String(s || "").trim().toLowerCase();
 
-// 후보 이름들(한국어 포함)
 const NAME_CANDIDATES = ["name", "title", "제목"];
 const URL_CANDIDATES = ["url", "link", "주소"];
 const DATE_CANDIDATES = ["date", "날짜"];
 const TAGS_CANDIDATES = ["tags", "tag", "태그"];
 const STATUS_CANDIDATES = ["status", "state", "상태"];
 
-// 간단 마크다운 → Notion 블록
 function toBlocks(raw = "") {
   const lines = String(raw).split("\n").map((l) => l.trimEnd());
   const blocks = [];
@@ -37,15 +34,13 @@ function toBlocks(raw = "") {
 }
 
 async function readJSON(req) {
-  if (req.body && typeof req.body === "object") return req.body; // vercel가 body를 이미 파싱한 경우
+  if (req.body && typeof req.body === "object") return req.body;
   const chunks = [];
   for await (const c of req) chunks.push(c);
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return {}; }
 }
 
-// DB 속성 자동 매핑
 function makePropertyMapper(dbProps) {
-  // dbProps: { [propName]: { type, ... } }
   const entries = Object.entries(dbProps || {});
   const byType = (t) => entries.filter(([_, v]) => v?.type === t);
   const findByNames = (candidates) => {
@@ -54,14 +49,12 @@ function makePropertyMapper(dbProps) {
     return found ? found[0] : null;
   };
 
-  // title: 단 하나만 존재 → 자동 탐색 (후보명 우선, 없으면 첫 title)
   let titleKey = findByNames(NAME_CANDIDATES);
   if (!titleKey) {
     const titles = byType("title");
     if (titles.length) titleKey = titles[0][0];
   }
 
-  // url/date/multi_select/select: 후보명 우선, 없으면 타입으로 첫 번째
   const findKey = (cands, type) => {
     let k = findByNames(cands);
     if (k && dbProps[k]?.type === type) return k;
@@ -78,8 +71,7 @@ function makePropertyMapper(dbProps) {
 }
 
 // ----- handler -----
-module.exports = async (req, res) => {
-  // (옵션) CORS
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -95,22 +87,18 @@ module.exports = async (req, res) => {
   }
 
   const body = await readJSON(req);
-  // 요청 스키마
-  // title(필수), content(선택), url(선택), date(선택; YYYY-MM-DD), tags(선택; string[]), status(선택; string)
   const { title, content, url, date, tags, status } = body || {};
   if (!title) return res.status(400).json({ error: "Missing 'title' in request body" });
 
   const notion = new Client({ auth: NOTION_TOKEN });
 
   try {
-    // 1) DB 속성 조회 → 자동 매핑
     const db = await notion.databases.retrieve({ database_id: NOTION_DATABASE_ID });
     const { titleKey, urlKey, dateKey, tagsKey, statusKey } = makePropertyMapper(db?.properties || {});
     if (!titleKey) {
       return res.status(400).json({ error: "No title property found in Notion DB. Please add a title property." });
     }
 
-    // 2) properties 조립 (존재하는 키만 사용)
     const properties = {};
     properties[titleKey] = { title: [{ type: "text", text: { content: String(title) } }] };
 
@@ -123,13 +111,11 @@ module.exports = async (req, res) => {
       properties[statusKey] = { select: { name: String(status) } };
     }
 
-    // 3) 페이지 생성
     const page = await notion.pages.create({
       parent: { database_id: NOTION_DATABASE_ID },
       properties
     });
 
-    // 4) 본문 블록 추가
     if (content) {
       const children = toBlocks(content).slice(0, 100);
       if (children.length) {
@@ -147,4 +133,4 @@ module.exports = async (req, res) => {
     const detail = err?.message || err?.response?.data || "Unknown error";
     return res.status(status).json({ error: "Failed to save to Notion", detail });
   }
-};
+}
