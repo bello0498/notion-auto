@@ -2,12 +2,15 @@
   "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
   "openapi": "3.1.0",
   "info": {
-    "title": "Notion Auto Save API",
-    "version": "1.2.0",
-    "description": "Create a Notion database item and/or a child page under a parent page."
+    "title": "Notion + Confluence Auto Save API",
+    "version": "1.3.0",
+    "description": "Create a Notion database item/page and also create Confluence pages."
   },
   "servers": [
-    { "url": "https://notion-auto.vercel.app", "description": "Production" }
+    {
+      "url": "https://notion-auto.vercel.app",
+      "description": "Production"
+    }
   ],
   "paths": {
     "/api/save": {
@@ -21,12 +24,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["mode"],
+                "required": [
+                  "mode"
+                ],
                 "additionalProperties": false,
                 "properties": {
                   "mode": {
                     "type": "string",
-                    "enum": ["db", "page", "both"],
+                    "enum": [
+                      "db",
+                      "page",
+                      "both"
+                    ],
                     "description": "저장 모드 선택 (db: DB에 저장, page: Page에 저장, both: 둘 다 저장)"
                   },
                   "title": {
@@ -48,7 +57,9 @@
                   },
                   "tags": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                      "type": "string"
+                    },
                     "description": "(DB 모드 전용) 태그 목록 (multi_select)"
                   },
                   "status": {
@@ -81,15 +92,34 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["ok", "mode", "results"],
+                  "required": [
+                    "ok",
+                    "mode",
+                    "results"
+                  ],
                   "properties": {
-                    "ok": { "type": "boolean" },
-                    "mode": { "type": "string", "enum": ["db", "page", "both"] },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "db",
+                        "page",
+                        "both"
+                      ]
+                    },
                     "results": {
                       "type": "object",
                       "properties": {
-                        "db": { "type": "string", "description": "DB에 생성된 pageId" },
-                        "page": { "type": "string", "description": "Page에 생성된 pageId" }
+                        "db": {
+                          "type": "string",
+                          "description": "DB에 생성된 pageId"
+                        },
+                        "page": {
+                          "type": "string",
+                          "description": "Page에 생성된 pageId"
+                        }
                       },
                       "additionalProperties": false
                     }
@@ -99,22 +129,135 @@
                 "examples": {
                   "dbSuccess": {
                     "summary": "DB only success",
-                    "value": { "ok": true, "mode": "db", "results": { "db": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" } }
+                    "value": {
+                      "ok": true,
+                      "mode": "db",
+                      "results": {
+                        "db": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      }
+                    }
                   },
                   "pageSuccess": {
                     "summary": "Page only success",
-                    "value": { "ok": true, "mode": "page", "results": { "page": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" } }
+                    "value": {
+                      "ok": true,
+                      "mode": "page",
+                      "results": {
+                        "page": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      }
+                    }
                   },
                   "bothSuccess": {
                     "summary": "Both success",
-                    "value": { "ok": true, "mode": "both", "results": { "db": "…", "page": "…" } }
+                    "value": {
+                      "ok": true,
+                      "mode": "both",
+                      "results": {
+                        "db": "…",
+                        "page": "…"
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "description": "잘못된 요청 (예: mode 누락, 타입 불일치)" },
-          "500": { "description": "서버 오류 또는 Notion API 오류" }
+          "400": {
+            "description": "잘못된 요청 (예: mode 누락, 타입 불일치)"
+          },
+          "500": {
+            "description": "서버 오류 또는 Notion API 오류"
+          }
+        }
+      }
+    },
+    "/api/confluenceGpt": {
+      "post": {
+        "operationId": "saveToConfluence",
+        "summary": "Save content into Confluence",
+        "description": "Create a page in Confluence under the specified spaceKey.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "content",
+                  "spaceKey"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "description": "페이지 제목"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "본문 (HTML 포맷 권장, storage representation)"
+                  },
+                  "spaceKey": {
+                    "type": "string",
+                    "description": "대상 Confluence Space Key (예: ~63913894213a315af34b9608)"
+                  }
+                },
+                "example": {
+                  "title": "Confluence Test Page",
+                  "content": "<p>테스트 페이지 🚀</p>",
+                  "spaceKey": "~63913894213a315af34b9608"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Page created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "id",
+                    "links"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "생성된 Confluence pageId"
+                    },
+                    "links": {
+                      "type": "object",
+                      "properties": {
+                        "webui": {
+                          "type": "string",
+                          "description": "웹에서 접근 가능한 페이지 URL"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true,
+                  "id": "123456",
+                  "links": {
+                    "webui": "/spaces/~63913894213a315af34b9608/pages/123456"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 (예: spaceKey 누락)"
+          },
+          "500": {
+            "description": "Confluence API 오류"
+          }
         }
       }
     }
