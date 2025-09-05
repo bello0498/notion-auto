@@ -16,28 +16,17 @@
     "/api/save": {
       "post": {
         "operationId": "saveToNotion",
-        "summary": "Save content into Notion (DB, Page, or Both)",
-        "description": "Save text into Notion Database, Page, or both depending on mode.",
+        "summary": "Save content into Notion DB (always DB)",
+        "description": "Create or update content in Notion. Always saves into the Notion Database, and manages blocks via pageId.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "mode"
-                ],
+                "required": ["content"],
                 "additionalProperties": false,
                 "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "db",
-                      "page",
-                      "both"
-                    ],
-                    "description": "저장 모드 선택 (db: DB에 저장, page: Page에 저장, both: 둘 다 저장)"
-                  },
                   "title": {
                     "type": "string",
                     "description": "제목 (없으면 content 첫 줄 또는 자동 생성)"
@@ -49,37 +38,37 @@
                   "url": {
                     "type": "string",
                     "format": "uri",
-                    "description": "(DB 모드 전용) URL 속성 값"
+                    "description": "URL 속성 값 (선택)"
                   },
                   "date": {
                     "type": "string",
-                    "description": "(DB 모드 전용) 날짜 (YYYY-MM-DD 또는 ISO datetime)"
+                    "description": "날짜 (YYYY-MM-DD 또는 ISO datetime)"
                   },
                   "tags": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     },
-                    "description": "(DB 모드 전용) 태그 목록 (multi_select)"
+                    "description": "태그 목록 (multi_select)"
                   },
                   "status": {
                     "type": "string",
-                    "description": "(DB 모드 전용) 상태 값 (Select 권장)"
+                    "description": "상태 값 (Select 권장)"
                   },
                   "pageId": {
                     "type": "string",
-                    "description": "(Page 모드 전용, 선택) 상위 Page ID. 없으면 env NOTION_PAGE_ID 사용"
+                    "description": "기존 페이지 ID (있으면 수정, 없으면 새로 생성)"
                   },
                   "databaseId": {
                     "type": "string",
-                    "description": "(DB 모드 전용, 선택) DB ID override. 없으면 env NOTION_DATABASE_ID 사용"
+                    "description": "DB ID override (없으면 환경변수 사용)"
                   }
                 },
                 "example": {
-                  "mode": "both",
-                  "title": "Both Save Test",
-                  "content": "### One shot\\n- DB + child page",
-                  "status": "In progress"
+                  "title": "예시 문서",
+                  "content": "### 문서 내용\n- 마크다운 형식",
+                  "status": "작성중",
+                  "tags": ["기획", "개발"]
                 }
               }
             }
@@ -92,37 +81,21 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "ok",
-                    "mode",
-                    "results"
-                  ],
+                  "required": ["ok", "results"],
                   "properties": {
                     "ok": {
                       "type": "boolean"
-                    },
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "db",
-                        "page",
-                        "both"
-                      ]
                     },
                     "results": {
                       "type": "object",
                       "properties": {
                         "db": {
                           "type": "string",
-                          "description": "DB에 생성된 pageId"
-                        },
-                        "page": {
-                          "type": "string",
-                          "description": "Page에 생성된 pageId"
+                          "description": "생성되거나 수정된 Notion pageId"
                         },
                         "url": {
                           "type": "string",
-                          "description": "생성된 노션 페이지/아이템 웹 URL"
+                          "description": "노션 페이지 링크"
                         }
                       },
                       "additionalProperties": false
@@ -131,36 +104,12 @@
                   "additionalProperties": false
                 },
                 "examples": {
-                  "dbSuccess": {
-                    "summary": "DB only success",
+                  "success": {
+                    "summary": "성공 예시",
                     "value": {
                       "ok": true,
-                      "mode": "db",
                       "results": {
                         "db": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-                        "url": "https://www.notion.so/xxxxxxxxxxxx"
-                      }
-                    }
-                  },
-                  "pageSuccess": {
-                    "summary": "Page only success",
-                    "value": {
-                      "ok": true,
-                      "mode": "page",
-                      "results": {
-                        "page": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-                        "url": "https://www.notion.so/xxxxxxxxxxxx"
-                      }
-                    }
-                  },
-                  "bothSuccess": {
-                    "summary": "Both success",
-                    "value": {
-                      "ok": true,
-                      "mode": "both",
-                      "results": {
-                        "db": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-                        "page": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
                         "url": "https://www.notion.so/xxxxxxxxxxxx"
                       }
                     }
@@ -170,7 +119,7 @@
             }
           },
           "400": {
-            "description": "잘못된 요청 (예: mode 누락, 타입 불일치)"
+            "description": "잘못된 요청"
           },
           "500": {
             "description": "서버 오류 또는 Notion API 오류"
