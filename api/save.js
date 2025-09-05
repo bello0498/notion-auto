@@ -74,11 +74,11 @@ async function appendInChunks(notion, blockId, blocks) {
  * 🔹 DB 1행 업서트(키: pageIdKey)
  * - 전제: DB에 pageIdKey 속성이 존재해야 중복 없는 업서트 가능
  * - titleKey도 필수(노션 DB는 title 프로퍼티가 반드시 필요)
+ * - 기존 row가 있으면 수정, 없으면 새로 생성
  */
 async function upsertDbForPage(notion, databaseId, meta) {
   const { pageId, pageUrl, title, url, date, tags, status } = meta;
 
-  // DB 스키마 읽어서 실제 키 매핑
   const db = await notion.databases.retrieve({ database_id: databaseId });
   const {
     titleKey,
@@ -90,7 +90,6 @@ async function upsertDbForPage(notion, databaseId, meta) {
     pageUrlKey,
   } = makePropertyMapper(db?.properties || {});
 
-  // 필수 키 검증
   if (!titleKey) {
     throw Object.assign(new Error("DB에 제목(title) 프로퍼티가 없습니다."), { status: 400 });
   }
@@ -101,7 +100,6 @@ async function upsertDbForPage(notion, databaseId, meta) {
     );
   }
 
-  // 업서트 대상 찾기: pageIdKey == pageId
   let existingRowId = null;
   const found = await notion.databases.query({
     database_id: databaseId,
@@ -110,7 +108,6 @@ async function upsertDbForPage(notion, databaseId, meta) {
   });
   if (found.results?.length) existingRowId = found.results[0].id;
 
-  // 공통 프로퍼티 구성
   const props = {};
   props[titleKey] = { title: [{ type: "text", text: { content: String(title || "") } }] };
   if (pageIdKey) props[pageIdKey] = { rich_text: [{ text: { content: String(pageId) } }] };
@@ -118,12 +115,10 @@ async function upsertDbForPage(notion, databaseId, meta) {
   if (url && urlKey) props[urlKey] = { url: String(url) };
   if (date && dateKey) props[dateKey] = { date: { start: String(date) } };
   if (Array.isArray(tags) && tags.length && tagsKey) {
-    // 미등록 태그도 이름만 주면 노션에서 옵션 생성됨
     props[tagsKey] = { multi_select: tags.map((t) => ({ name: String(t) })) };
   }
   if (status && statusKey) props[statusKey] = { select: { name: String(status) } };
 
-  // 업서트 실행
   if (existingRowId) {
     const updated = await notion.pages.update({ page_id: existingRowId, properties: props });
     return { rowId: updated.id };
@@ -137,10 +132,8 @@ async function upsertDbForPage(notion, databaseId, meta) {
 async function createChildrenRecursively(notion, parentPageId, databaseId, children = []) {
   const out = [];
   for (const child of children) {
-    // 제목 산출
     const cTitle = deriveTitle(child.title, child.content);
 
-    // 자식 페이지 생성
     const newPage = await notion.pages.create({
       parent: { page_id: parentPageId },
       properties: {
@@ -148,7 +141,6 @@ async function createChildrenRecursively(notion, parentPageId, databaseId, child
       },
     });
 
-    // 본문 구성(첫 줄=제목이면 제거)
     if (typeof child.content === "string") {
       const cleaned = removeTitleFromContent(cTitle, child.content);
       const blocks = toBlocks(cleaned || "");
@@ -157,7 +149,6 @@ async function createChildrenRecursively(notion, parentPageId, databaseId, child
 
     const pageUrl = newPage.url || `https://www.notion.so/${newPage.id.replace(/-/g, "")}`;
 
-    // DB 동기화(옵션)
     let dbInfo = null;
     if (databaseId) {
       dbInfo = await upsertDbForPage(notion, databaseId, {
@@ -171,7 +162,6 @@ async function createChildrenRecursively(notion, parentPageId, databaseId, child
       });
     }
 
-    // 하위의 하위가 있으면 재귀 생성
     let nested = [];
     if (Array.isArray(child.children) && child.children.length) {
       nested = await createChildrenRecursively(notion, newPage.id, databaseId, child.children);
@@ -185,13 +175,12 @@ async function createChildrenRecursively(notion, parentPageId, databaseId, child
 module.exports = async (req, res) => {
   // ▷ 공통 헤더/CORS
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Access-Control-Allow-Origin", "*"); // 실제 배포 시 신뢰 도메인으로 제한 권장
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Charset");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
 
-  // ▷ 환경변수 확인
   const { NOTION_TOKEN, NOTION_PAGE_ID, NOTION_DATABASE_ID } = process.env;
   if (!NOTION_TOKEN) return res.status(500).json({ error: "Missing NOTION_TOKEN env" });
 
@@ -201,22 +190,17 @@ module.exports = async (req, res) => {
     // ▷ 요청 파라미터 수신
     const body = await readJSON(req);
     const {
-      // 생성/수정 판별
-      pageId: inputPageId,            // 있으면 수정, 없으면 생성
-      // 기본 parent/db 대체 가능
-      parentPageId: parentOverride,   // 없으면 env NOTION_PAGE_ID 사용
-      databaseId: databaseOverride,   // 없으면 env NOTION_DATABASE_ID 사용
-      // 콘텐츠/메타
+      pageId: inputPageId,
+      parentPageId: parentOverride,
+      databaseId: databaseOverride,
       title, content, url, date, tags, status,
-      // 하위메뉴 생성
-      children,                       // [{ title?, content?, url?, date?, tags?, status?, children? }]
+      children,
     } = body || {};
 
     // ▷ parent / database 대상 확정
     const parentPageId = toUuid(parentOverride || NOTION_PAGE_ID || "");
     const databaseId = toUuid(databaseOverride || NOTION_DATABASE_ID || "");
 
-    // 생성 모드에서는 parentPageId 필수
     if (!inputPageId && !parentPageId) {
       return res.status(400).json({ error: "생성에는 parent 페이지 ID가 필요합니다. (env NOTION_PAGE_ID 또는 body.parentPageId)" });
     }
@@ -232,7 +216,6 @@ module.exports = async (req, res) => {
     const modifiedAt = new Date().toISOString();
 
     if (pageId) {
-      // ---- 수정: 기존 페이지 제목/본문 교체
       await notion.pages.update({
         page_id: pageId,
         properties: {
@@ -240,13 +223,11 @@ module.exports = async (req, res) => {
         },
       });
       if (typeof content === "string") {
-        // 본문 완전 교체(요구사항)
         await deleteAllChildren(notion, pageId);
         await appendInChunks(notion, pageId, blocks);
       }
       pageUrl = `https://www.notion.so/${pageId.replace(/-/g, "")}`;
     } else {
-      // ---- 생성: parent 아래 새 페이지
       const newPage = await notion.pages.create({
         parent: { page_id: parentPageId },
         properties: {
@@ -255,12 +236,10 @@ module.exports = async (req, res) => {
       });
       pageId = newPage.id;
       pageUrl = newPage.url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
-
-      // 본문 추가
       await appendInChunks(notion, pageId, blocks);
     }
 
-    // ▷ DB 동기화(both가 기본) — DB가 지정되어 있으면 1행 업서트
+    // ▷ DB 동기화(both가 기본)
     let dbInfo = null;
     if (databaseId) {
       dbInfo = await upsertDbForPage(notion, databaseId, {
@@ -285,8 +264,8 @@ module.exports = async (req, res) => {
       ok: true,
       results: {
         page: { id: pageId, url: pageUrl, modifiedAt },
-        db: dbInfo,                // { rowId } | null
-        children: createdChildren, // [{ id, url, db?, children? }, ...]
+        db: dbInfo,
+        children: createdChildren,
       },
     });
   } catch (err) {
