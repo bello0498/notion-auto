@@ -1,5 +1,5 @@
 // ==========================
-// api/save.js
+// api/save.js (최종 버전)
 // ==========================
 
 const { Client } = require("@notionhq/client");
@@ -30,24 +30,23 @@ module.exports = async (req, res) => {
 
   const notion = new Client({ auth: NOTION_TOKEN });
   const body = await readJSON(req);
-  const { mode, title, content, url, date, tags, status, pageId: overridePageId } = body || {};
-  const m = String(mode || "").trim().toLowerCase();
-  if (!m || !["db", "page", "both"].includes(m)) {
-    return res.status(400).json({ error: "Missing 'mode' (db | page | both)" });
-  }
-
+  const { title, content, url, date, tags, status, pageId } = body || {};
   const results = {};
+
   try {
-    // 저장 to DB
-    if (m === "db" || m === "both") {
-      const dbId = toUuid(body?.databaseId || NOTION_DATABASE_ID || "");
-      if (!dbId) return res.status(500).json({ error: "Missing NOTION_DATABASE_ID env (db/both)" });
+    const dbId = toUuid(body?.databaseId || NOTION_DATABASE_ID || "");
+    if (!dbId) return res.status(500).json({ error: "Missing NOTION_DATABASE_ID env" });
 
-      const finalTitle = deriveTitle(title, content);
-      const db = await notion.databases.retrieve({ database_id: dbId });
-      const { titleKey, urlKey, dateKey, tagsKey, statusKey } = makePropertyMapper(db?.properties || {});
-      if (!titleKey) return res.status(400).json({ error: "No title property in DB" });
+    const finalTitle = deriveTitle(title, content);
+    const db = await notion.databases.retrieve({ database_id: dbId });
+    const {
+      titleKey, urlKey, dateKey, tagsKey, statusKey, pageIdKey, pageUrlKey
+    } = makePropertyMapper(db?.properties || {});
+    if (!titleKey) return res.status(400).json({ error: "No title property in DB" });
 
+    // 새 페이지 생성
+    let newPageId = pageId;
+    if (!newPageId) {
       const properties = {};
       properties[titleKey] = { title: [{ type: "text", text: { content: String(finalTitle) } }] };
       if (url && urlKey) properties[urlKey] = { url: String(url) };
@@ -60,29 +59,37 @@ module.exports = async (req, res) => {
       }
 
       const dbPage = await notion.pages.create({ parent: { database_id: dbId }, properties });
-      if (content) {
-        await notion.blocks.children.append({ block_id: dbPage.id, children: toBlocks(content) });
+      newPageId = dbPage.id;
+
+      // 페이지 URL 저장
+      const pageUrl = `https://www.notion.so/${newPageId.replace(/-/g, "")}`;
+      const updateProps = {};
+      if (pageIdKey) updateProps[pageIdKey] = { rich_text: [{ text: { content: newPageId } }] };
+      if (pageUrlKey) updateProps[pageUrlKey] = { url: pageUrl };
+
+      if (Object.keys(updateProps).length) {
+        await notion.pages.update({ page_id: newPageId, properties: updateProps });
       }
-      results.db = dbPage.id;
+
+      results.db = newPageId;
     }
 
-    // 저장 to 페이지
-    if (m === "page" || m === "both") {
-      const parentPageId = toUuid(overridePageId || NOTION_PAGE_ID || "");
-      if (!parentPageId) return res.status(500).json({ error: "Missing NOTION_PAGE_ID env or pageId in body (page/both)" });
+    // 콘텐츠 업데이트 (블록 수정 or 추가)
+    if (content && newPageId) {
+      // 기존 블록 삭제 후 새 블록 삽입 (옵션: append로 바꿔도 됨)
+      const children = toBlocks(content);
 
-      const finalTitle = deriveTitle(title, content);
-      const newPage = await notion.pages.create({
-        parent: { page_id: parentPageId },
-        properties: { title: { title: [{ type: "text", text: { content: String(finalTitle) } }] } },
-      });
-      if (content) {
-        await notion.blocks.children.append({ block_id: newPage.id, children: toBlocks(content) });
+      // 블록 삭제 (기존 내용 제거)
+      const oldBlocks = await notion.blocks.children.list({ block_id: newPageId });
+      for (const block of oldBlocks.results) {
+        await notion.blocks.delete({ block_id: block.id });
       }
-      results.page = newPage.id;
+
+      // 새 블록 추가
+      await notion.blocks.children.append({ block_id: newPageId, children });
     }
 
-    return res.status(200).json({ ok: true, mode: m, results });
+    return res.status(200).json({ ok: true, results });
   } catch (err) {
     console.error("Save API error:", err?.response?.data || err);
     const statusCode = err?.status || err?.response?.status || 500;
