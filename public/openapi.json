@@ -3,8 +3,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Notion + Confluence Auto Save API",
-    "version": "1.4.0",
-    "description": "Create a Notion database item/page and also create Confluence pages."
+    "version": "1.5.0",
+    "description": "Create or update Notion pages (always DB) and create Confluence pages (title/content 분리 처리)."
   },
   "servers": [
     {
@@ -29,11 +29,11 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "description": "제목 (없으면 content 첫 줄 또는 자동 생성)"
+                    "description": "제목 (Notion 페이지 제목 및 DB 항목 제목으로 사용됨)"
                   },
                   "content": {
                     "type": "string",
-                    "description": "본문 (Markdown 일부 지원: #, ##, ###, - )"
+                    "description": "본문 (제목 줄은 포함하지 않음). Markdown 일부 지원."
                   },
                   "url": {
                     "type": "string",
@@ -46,9 +46,7 @@
                   },
                   "tags": {
                     "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
+                    "items": { "type": "string" },
                     "description": "태그 목록 (multi_select)"
                   },
                   "status": {
@@ -62,13 +60,17 @@
                   "databaseId": {
                     "type": "string",
                     "description": "DB ID override (없으면 환경변수 사용)"
+                  },
+                  "summary": {
+                    "type": "string",
+                    "description": "요약 (응답 메시지 및 content 미리보기용)"
                   }
                 },
                 "example": {
-                  "title": "예시 문서",
-                  "content": "### 문서 내용\n- 마크다운 형식",
-                  "status": "작성중",
-                  "tags": ["기획", "개발"]
+                  "title": "회의 정리",
+                  "content": "- 안건1\n- 안건2",
+                  "tags": ["회의", "기획"],
+                  "status": "진행 중"
                 }
               }
             }
@@ -83,9 +85,7 @@
                   "type": "object",
                   "required": ["ok", "results"],
                   "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
+                    "ok": { "type": "boolean" },
                     "results": {
                       "type": "object",
                       "properties": {
@@ -118,12 +118,8 @@
               }
             }
           },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "500": {
-            "description": "서버 오류 또는 Notion API 오류"
-          }
+          "400": { "description": "잘못된 요청" },
+          "500": { "description": "서버 오류 또는 Notion API 오류" }
         }
       }
     },
@@ -131,17 +127,14 @@
       "post": {
         "operationId": "saveToConfluence",
         "summary": "Save content into Confluence",
-        "description": "Create a page in Confluence. The target Space is set via server ENV (CONFLUENCE_SPACE_KEY).",
+        "description": "Create a page in Confluence. title은 페이지 제목, content는 제목이 제거된 본문 HTML로 저장됩니다.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "title",
-                  "content"
-                ],
+                "required": ["title", "content"],
                 "properties": {
                   "title": {
                     "type": "string",
@@ -149,13 +142,11 @@
                   },
                   "content": {
                     "type": "string",
-                    "description": "본문 (HTML 포맷 권장, storage representation)"
+                    "description": "본문 (HTML 포맷, 제목은 포함하지 않음)"
                   },
                   "tags": {
                     "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
+                    "items": { "type": "string" },
                     "description": "문서 태그 (Confluence Label 로 저장)"
                   },
                   "date": {
@@ -165,16 +156,17 @@
                   },
                   "status": {
                     "type": "string",
-                    "description": "문서 상태 (예: 초안, 작성중, 완료 — Page Properties 매크로로 저장)"
+                    "description": "문서 상태 (예: 초안, 작성중, 완료)"
+                  },
+                  "parentPageId": {
+                    "type": "string",
+                    "description": "부모 페이지 ID (있으면 하위 페이지로 생성)"
                   }
                 },
                 "example": {
                   "title": "Confluence Test Page",
-                  "content": "<p>테스트 페이지 🚀</p>",
-                  "tags": [
-                    "퍼블리싱",
-                    "DevOps"
-                  ],
+                  "content": "<p>테스트 페이지 본문입니다.</p>",
+                  "tags": ["퍼블리싱", "DevOps"],
                   "date": "2025-09-02",
                   "status": "초안"
                 }
@@ -189,27 +181,14 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "ok",
-                    "id",
-                    "links"
-                  ],
+                  "required": ["ok", "id", "links"],
                   "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "id": {
-                      "type": "string",
-                      "description": "생성된 Confluence pageId"
-                    },
+                    "ok": { "type": "boolean", "example": true },
+                    "id": { "type": "string", "description": "생성된 Confluence pageId" },
                     "links": {
                       "type": "object",
                       "properties": {
-                        "webui": {
-                          "type": "string",
-                          "description": "웹에서 접근 가능한 페이지 URL"
-                        }
+                        "webui": { "type": "string", "description": "웹에서 접근 가능한 페이지 URL" }
                       }
                     }
                   }
@@ -224,12 +203,8 @@
               }
             }
           },
-          "400": {
-            "description": "잘못된 요청 (예: title/content 누락)"
-          },
-          "500": {
-            "description": "Confluence API 오류"
-          }
+          "400": { "description": "잘못된 요청 (예: title/content 누락)" },
+          "500": { "description": "Confluence API 오류" }
         }
       }
     }

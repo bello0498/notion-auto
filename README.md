@@ -1,22 +1,26 @@
 # notion-auto
 
-Vercel에서 실행되는 Notion 자동화 API입니다. 데이터베이스 페이지 생성, 하위 페이지 생성, 또는 둘 다 동시에 처리할 수 있습니다.
+Vercel에서 실행되는 Notion 및 Confluence 자동화 API입니다. Notion DB에 페이지를 생성하고, 필요한 경우 Confluence에도 문서를 함께 생성할 수 있습니다.
+
+---
 
 ## 🚀 API 엔드포인트
 
 ```
 POST https://notion-auto.vercel.app/api/save
+POST https://notion-auto.vercel.app/api/gptConfluence
 ```
 
-## 📝 사용 방법
+---
 
-### 1. DB 모드 - 데이터베이스에 페이지 생성
+## 📝 Notion 저장 (Always DB 저장 방식)
+
+### ✅ 기본 사용 예시
 
 ```bash
 curl -X POST "https://notion-auto.vercel.app/api/save" \
   -H "Content-Type: application/json" \
   -d '{
-    "mode": "db",
     "title": "디자인 리뷰 메모",
     "content": "# 회의 메모\n- 헤더 16px 그리드\n- 버튼 간격 8px",
     "url": "https://example.com/spec",
@@ -27,9 +31,9 @@ curl -X POST "https://notion-auto.vercel.app/api/save" \
 ```
 
 **JSON Body:**
+
 ```json
 {
-  "mode": "db",
   "title": "디자인 리뷰 메모",
   "content": "# 회의 메모\n- 헤더 16px 그리드\n- 버튼 간격 8px",
   "url": "https://example.com/spec",
@@ -39,156 +43,155 @@ curl -X POST "https://notion-auto.vercel.app/api/save" \
 }
 ```
 
-### 2. PAGE 모드 - 하위 페이지 생성
+---
+
+## 🧾 Confluence 문서 생성
+
+### ✅ 기본 사용 예시
 
 ```bash
-curl -X POST "https://notion-auto.vercel.app/api/save" \
+curl -X POST "https://notion-auto.vercel.app/api/gptConfluence" \
   -H "Content-Type: application/json" \
   -d '{
-    "mode": "page",
-    "title": "퍼블 메모",
-    "content": "## 오늘 작업\n- 카드 hover"
+    "title": "퍼블리싱 가이드",
+    "content": "<h2>버튼 컴포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
+    "tags": ["디자인 시스템", "가이드"],
+    "status": "작성중",
+    "date": "2025-09-06"
   }'
 ```
 
 **JSON Body:**
+
 ```json
 {
-  "mode": "page",
-  "title": "퍼블 메모",
-  "content": "## 오늘 작업\n- 카드 hover"
+  "title": "퍼블리싱 가이드",
+  "content": "<h2>버튼 컴포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
+  "tags": ["디자인 시스템", "가이드"],
+  "status": "작성중",
+  "date": "2025-09-06"
 }
 ```
 
-### 3. BOTH 모드 - DB + 하위 페이지 동시 생성
+---
 
-```bash
-curl -X POST "https://notion-auto.vercel.app/api/save" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "both",
-    "title": "동시 저장 테스트",
-    "content": "### 한 번에\n- DB + 하위페이지",
-    "status": "Open"
-  }'
-```
+## 📋 파라미터 설명 (공통)
 
-**JSON Body:**
-```json
-{
-  "mode": "both",
-  "title": "동시 저장 테스트",
-  "content": "### 한 번에\n- DB + 하위페이지",
-  "status": "Open"
-}
-```
+| 파라미터         | 타입     | 필수 | 설명                               |
+| ------------ | ------ | -- | -------------------------------- |
+| `title`      | string | ✅  | 제목                               |
+| `content`    | string | ✅  | 본문 내용 (Markdown 또는 HTML)         |
+| `tags`       | array  | ❌  | 태그 배열 (multi\_select 또는 Label)   |
+| `status`     | string | ❌  | 상태값 (Select 또는 Page Properties)  |
+| `date`       | string | ❌  | 생성일 (YYYY-MM-DD 또는 ISO datetime) |
+| `url`        | string | ❌  | 관련 링크 (Notion에서만 사용)             |
+| `pageId`     | string | ❌  | 기존 페이지 수정용 (Notion 전용)           |
+| `databaseId` | string | ❌  | Notion DB override (환경변수 대신 사용)  |
 
-## 📋 파라미터
+---
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|---------|------|------|------|
-| `mode` | string | ✅ | `"db"`, `"page"`, `"both"` 중 하나 |
-| `title` | string | ❌ | 페이지 제목 (미입력시 자동 생성) |
-| `content` | string | ❌ | Markdown 형식 내용 |
-| `url` | string | ❌ | 관련 URL (DB 모드에서만) |
-| `date` | string | ❌ | 날짜 (YYYY-MM-DD 형식) |
-| `tags` | array | ❌ | 태그 배열 (DB 모드에서만) |
-| `status` | string | ❌ | 상태값 (DB 모드에서만) |
-| `pageId` | string | ❌ | 특정 페이지 ID 지정 시 |
+## 📊 응답 예시
 
-## 📊 응답 형식
+### ✅ Notion 저장 성공 시
 
-### 성공 응답
 ```json
 {
   "ok": true,
-  "mode": "both",
   "results": {
     "db": "25f2bab5-2224-81e8-a6b6-effed4af4dc3",
-    "page": "25f2bab5-2224-81d0-8ceb-f84da230d8f0"
+    "url": "https://www.notion.so/xxxxxxxxxxxx"
   }
 }
 ```
 
-### 에러 응답
+### ✅ Confluence 저장 성공 시
+
 ```json
 {
-  "error": "Failed to save to Notion",
-  "detail": "상태 is expected to be status."
+  "ok": true,
+  "id": "123456",
+  "links": {
+    "webui": "https://aegisep.atlassian.net/wiki/spaces/SPACEKEY/pages/123456"
+  }
 }
 ```
 
-## 🔧 환경 변수 설정
+---
 
-Vercel 프로젝트에서 다음 환경 변수를 설정해주세요:
+## 🔧 환경 변수 설정 (Vercel)
 
 ```env
 NOTION_TOKEN=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  # DB 모드용
-NOTION_PAGE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx     # PAGE 모드용
+NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+NOTION_PAGE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+CONFLUENCE_EMAIL=example@domain.com
+CONFLUENCE_API_TOKEN=your_confluence_api_token
+CONFLUENCE_DOMAIN=https://your-domain.atlassian.net/wiki
+CONFLUENCE_SPACE_KEY=SPACEKEY
+CONFLUENCE_PARENT_PAGE_ID=0000000
 ```
 
-## 🤖 OpenAPI & GPT Actions
+---
 
-### OpenAPI Schema
+## 📌 기능 요약 및 팁
+
+* Notion 저장은 항상 Database를 기준으로 저장됨
+* `pageId`가 있으면 기존 DB 아이템 블록만 수정
+* `title`이 content에 중복될 경우 자동 제거 처리
+* Confluence는 단순 생성만 지원 (수정 불가)
+* Markdown (Notion), HTML (Confluence) 포맷 지원
+* 한글 속성 자동 매핑 및 최대 100개 블록까지 지원
+
+---
+
+## 🧠 OpenAPI & GPT Actions 연동
+
 ```
 https://notion-auto.vercel.app/openapi.json
 ```
 
-### GPT Actions 연동
-1. ChatGPT → "Add actions" 
+1. ChatGPT → "Add actions"
 2. "Import from URL" 선택
-3. 위 OpenAPI URL 붙여넣기
+3. 위 OpenAPI URL 입력 후 연결
 
-## 💡 팁
+---
 
-- **title 미입력시**: content 첫 줄 또는 타임스탬프로 자동 생성
-- **Markdown 지원**: `# ## ###`, `- *` (리스트) 자동 변환
-- **한국어 속성**: `제목`, `태그`, `상태` 등 한국어 속성명 자동 인식
-- **최대 블록**: 100개 블록까지 처리
+## 📱 사용 예시 (Node.js & Python)
 
-## 📱 사용 예시
+### Node.js
 
-### JavaScript/Node.js
-```javascript
+```js
 const response = await fetch('https://notion-auto.vercel.app/api/save', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    mode: 'db',
     title: '새 메모',
-    content: '## 내용\n- 할일 1\n- 할일 2',
-    tags: ['메모', '할일']
+    content: '# 작업내용\n- 컴포넌트 수정',
+    tags: ['메모', '개발']
   })
 });
-
 const result = await response.json();
 console.log(result);
 ```
 
 ### Python
+
 ```python
 import requests
 
 response = requests.post(
-    'https://notion-auto.vercel.app/api/save',
+    'https://notion-auto.vercel.app/api/gptConfluence',
     json={
-        'mode': 'page',
-        'title': '파이썬 메모',
-        'content': '### 작업 목록\n- API 테스트\n- 문서 작성'
+        'title': 'Confluence 문서',
+        'content': '<h1>문서 생성</h1><p>테스트</p>',
+        'tags': ['DevOps'],
+        'status': '초안'
     }
 )
-
 print(response.json())
 ```
 
-## 🔍 디버깅
-
-문제가 있을 때 확인사항:
-1. Notion DB의 속성명 확인 (제목, 상태, 태그 등)
-2. status 값이 DB의 선택 옵션과 일치하는지 확인
-3. 환경 변수가 올바르게 설정되었는지 확인
-
 ---
 
-💬 **문의사항이나 이슈가 있으시면 GitHub Issues에 남겨주세요!**
+💬 문의사항은 GitHub Issues 또는 ChatGPT를 통해 언제든지 주세요!

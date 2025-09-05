@@ -4,7 +4,7 @@
 
 const { Client } = require("@notionhq/client");
 const { toBlocks } = require("../lib/toBlocks");
-const { normalize, toUuid, deriveTitle, makePropertyMapper } = require("../lib/notionUtil");
+const { toUuid, deriveTitle, makePropertyMapper } = require("../lib/notionUtil");
 
 async function readJSON(req) {
   if (req.body && typeof req.body === "object") return req.body;
@@ -17,6 +17,14 @@ async function readJSON(req) {
   }
 }
 
+function removeTitleFromContent(title, content) {
+  const lines = content.split("\n").map(l => l.trim());
+  if (lines[0].replace(/^#+\s*/, "") === title.trim()) {
+    return lines.slice(1).join("\n");
+  }
+  return content;
+}
+
 module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -25,16 +33,16 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
 
-  const { NOTION_TOKEN, NOTION_DATABASE_ID, NOTION_PAGE_ID } = process.env;
+  const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
   if (!NOTION_TOKEN) return res.status(500).json({ error: "Missing NOTION_TOKEN env" });
 
   const notion = new Client({ auth: NOTION_TOKEN });
   const body = await readJSON(req);
-  const { title, content, url, date, tags, status, pageId } = body || {};
+  const { title, content, url, date, tags, status, pageId, databaseId, summary } = body || {};
   const results = {};
 
   try {
-    const dbId = toUuid(body?.databaseId || NOTION_DATABASE_ID || "");
+    const dbId = toUuid(databaseId || NOTION_DATABASE_ID || "");
     if (!dbId) return res.status(500).json({ error: "Missing NOTION_DATABASE_ID env" });
 
     const finalTitle = deriveTitle(title, content);
@@ -44,8 +52,9 @@ module.exports = async (req, res) => {
     } = makePropertyMapper(db?.properties || {});
     if (!titleKey) return res.status(400).json({ error: "No title property in DB" });
 
-    // 새 페이지 생성
     let newPageId = pageId;
+    const isUpdate = !!pageId;
+
     if (!newPageId) {
       const properties = {};
       properties[titleKey] = { title: [{ type: "text", text: { content: String(finalTitle) } }] };
@@ -61,32 +70,30 @@ module.exports = async (req, res) => {
       const dbPage = await notion.pages.create({ parent: { database_id: dbId }, properties });
       newPageId = dbPage.id;
 
-      // 페이지 URL 저장
       const pageUrl = `https://www.notion.so/${newPageId.replace(/-/g, "")}`;
       const updateProps = {};
       if (pageIdKey) updateProps[pageIdKey] = { rich_text: [{ text: { content: newPageId } }] };
       if (pageUrlKey) updateProps[pageUrlKey] = { url: pageUrl };
-
       if (Object.keys(updateProps).length) {
         await notion.pages.update({ page_id: newPageId, properties: updateProps });
       }
 
       results.db = newPageId;
+      results.url = pageUrl;
+    } else {
+      results.db = newPageId;
+      results.url = `https://www.notion.so/${newPageId.replace(/-/g, "")}`;
     }
 
-    // 콘텐츠 업데이트 (블록 수정 or 추가)
     if (content && newPageId) {
-      // 기존 블록 삭제 후 새 블록 삽입 (옵션: append로 바꿔도 됨)
-      const children = toBlocks(content);
+      const cleaned = removeTitleFromContent(finalTitle, content);
+      const blocks = toBlocks(cleaned);
 
-      // 블록 삭제 (기존 내용 제거)
       const oldBlocks = await notion.blocks.children.list({ block_id: newPageId });
       for (const block of oldBlocks.results) {
         await notion.blocks.delete({ block_id: block.id });
       }
-
-      // 새 블록 추가
-      await notion.blocks.children.append({ block_id: newPageId, children });
+      await notion.blocks.children.append({ block_id: newPageId, children: blocks });
     }
 
     return res.status(200).json({ ok: true, results });
