@@ -45,7 +45,7 @@ curl -X POST "https://notion-auto.vercel.app/api/save" \
 
 ---
 
-## 🧾 Confluence 문서 생성
+## 📟 Confluence 문서 생성
 
 ### ✅ 기본 사용 예시
 
@@ -54,7 +54,7 @@ curl -X POST "https://notion-auto.vercel.app/api/gptConfluence" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "퍼블리싱 가이드",
-    "content": "<h2>버튼 컴포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
+    "content": "<h2>버튼 컨포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
     "tags": ["디자인 시스템", "가이드"],
     "status": "작성중",
     "date": "2025-09-06"
@@ -66,7 +66,7 @@ curl -X POST "https://notion-auto.vercel.app/api/gptConfluence" \
 ```json
 {
   "title": "퍼블리싱 가이드",
-  "content": "<h2>버튼 컴포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
+  "content": "<h2>버튼 컨포넌트</h2><ul><li>Primary: #0055FF</li></ul>",
   "tags": ["디자인 시스템", "가이드"],
   "status": "작성중",
   "date": "2025-09-06"
@@ -75,18 +75,19 @@ curl -X POST "https://notion-auto.vercel.app/api/gptConfluence" \
 
 ---
 
-## 📋 파라미터 설명 (공통)
+## 📋 파래미터 설명 (공통)
 
-| 파라미터         | 타입     | 필수 | 설명                               |
+| 파래미터         | 타입     | 필수 | 설명                               |
 | ------------ | ------ | -- | -------------------------------- |
 | `title`      | string | ✅  | 제목                               |
-| `content`    | string | ✅  | 본문 내용 (Markdown 또는 HTML)         |
+| `content`    | string | ✅  | 부문 내용 (Markdown 또는 HTML)         |
 | `tags`       | array  | ❌  | 태그 배열 (multi\_select 또는 Label)   |
 | `status`     | string | ❌  | 상태값 (Select 또는 Page Properties)  |
 | `date`       | string | ❌  | 생성일 (YYYY-MM-DD 또는 ISO datetime) |
 | `url`        | string | ❌  | 관련 링크 (Notion에서만 사용)             |
 | `pageId`     | string | ❌  | 기존 페이지 수정용 (Notion 전용)           |
 | `databaseId` | string | ❌  | Notion DB override (환경변수 대신 사용)  |
+| `parentTitle` | string | ❌ | (개선) Confluence에서 상위 페이지 태겟을 기능하기 위해 제거하는 부모 문서 제목 |
 
 ---
 
@@ -134,7 +135,7 @@ CONFLUENCE_PARENT_PAGE_ID=0000000
 
 ---
 
-## 📌 기능 요약 및 팁
+## 📌 기능 요약 및 핀
 
 * Notion 저장은 항상 Database를 기준으로 저장됨
 * `pageId`가 있으면 기존 DB 아이템 블록만 수정
@@ -142,10 +143,11 @@ CONFLUENCE_PARENT_PAGE_ID=0000000
 * Confluence는 단순 생성만 지원 (수정 불가)
 * Markdown (Notion), HTML (Confluence) 포맷 지원
 * 한글 속성 자동 매핑 및 최대 100개 블록까지 지원
+* Confluence에서 `parentTitle`로 상위 문서의 제목을 지정하면, 개정적으로 범위를 확장하게 해주는 개선 기능
 
 ---
 
-## 🧠 OpenAPI & GPT Actions 연동
+## 🧐 OpenAPI & GPT Actions 연동
 
 ```
 https://notion-auto.vercel.app/openapi.json
@@ -167,7 +169,7 @@ const response = await fetch('https://notion-auto.vercel.app/api/save', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     title: '새 메모',
-    content: '# 작업내용\n- 컴포넌트 수정',
+    content: '# 작업내용\n- 컨포넌트 수정',
     tags: ['메모', '개발']
   })
 });
