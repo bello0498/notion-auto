@@ -24,12 +24,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["mode"],
+                "required": [
+                  "mode"
+                ],
                 "additionalProperties": false,
                 "properties": {
                   "mode": {
                     "type": "string",
-                    "enum": ["db", "page", "both"],
+                    "enum": [
+                      "db",
+                      "page",
+                      "both"
+                    ],
                     "description": "저장 모드 선택 (db: DB에 저장, page: Page에 저장, both: 둘 다 저장)"
                   },
                   "title": {
@@ -51,7 +57,9 @@
                   },
                   "tags": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                      "type": "string"
+                    },
                     "description": "(DB 모드 전용) 태그 목록 (multi_select)"
                   },
                   "status": {
@@ -84,12 +92,22 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["ok", "mode", "results"],
+                  "required": [
+                    "ok",
+                    "mode",
+                    "results"
+                  ],
                   "properties": {
-                    "ok": { "type": "boolean" },
+                    "ok": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "type": "string",
-                      "enum": ["db", "page", "both"]
+                      "enum": [
+                        "db",
+                        "page",
+                        "both"
+                      ]
                     },
                     "results": {
                       "type": "object",
@@ -151,8 +169,12 @@
               }
             }
           },
-          "400": { "description": "잘못된 요청 (예: mode 누락, 타입 불일치)" },
-          "500": { "description": "서버 오류 또는 Notion API 오류" }
+          "400": {
+            "description": "잘못된 요청 (예: mode 누락, 타입 불일치)"
+          },
+          "500": {
+            "description": "서버 오류 또는 Notion API 오류"
+          }
         }
       }
     },
@@ -160,14 +182,17 @@
       "post": {
         "operationId": "saveToConfluence",
         "summary": "Save content into Confluence",
-        "description": "Create a page in Confluence under the specified spaceKey.",
+        "description": "Create a page in Confluence. The target Space is set via server ENV (CONFLUENCE_SPACE_KEY).",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["title", "content", "spaceKey"],
+                "required": [
+                  "title",
+                  "content"
+                ],
                 "properties": {
                   "title": {
                     "type": "string",
@@ -177,13 +202,11 @@
                     "type": "string",
                     "description": "본문 (HTML 포맷 권장, storage representation)"
                   },
-                  "spaceKey": {
-                    "type": "string",
-                    "description": "대상 Confluence Space Key (예: ~63913894213a315af34b9608)"
-                  },
                   "tags": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                      "type": "string"
+                    },
                     "description": "문서 태그 (Confluence Label 로 저장)"
                   },
                   "date": {
@@ -199,8 +222,10 @@
                 "example": {
                   "title": "Confluence Test Page",
                   "content": "<p>테스트 페이지 🚀</p>",
-                  "spaceKey": "~63913894213a315af34b9608",
-                  "tags": ["퍼블리싱", "DevOps"],
+                  "tags": [
+                    "퍼블리싱",
+                    "DevOps"
+                  ],
                   "date": "2025-09-02",
                   "status": "초안"
                 }
@@ -215,7 +240,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["ok", "id", "links"],
+                  "required": [
+                    "ok",
+                    "id",
+                    "links"
+                  ],
                   "properties": {
                     "ok": {
                       "type": "boolean",
@@ -246,8 +275,12 @@
               }
             }
           },
-          "400": { "description": "잘못된 요청 (예: spaceKey 누락)" },
-          "500": { "description": "Confluence API 오류" }
+          "400": {
+            "description": "잘못된 요청 (예: title/content 누락)"
+          },
+          "500": {
+            "description": "Confluence API 오류"
+          }
         }
       }
     }
