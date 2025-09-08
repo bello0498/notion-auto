@@ -1,15 +1,12 @@
 // ==========================
-// 📘 Confluence 페이지 Save API (Upsert: Create + Update)
+// 📘 Confluence 페이지 생성 API (최종)
 // ==========================
 //
 // - 제목(title)과 본문(content)을 분리하여 받음
 // - content에 title이 중복 포함되어 있을 경우 자동 제거
 // - 지정된 spaceKey 내에 페이지 생성
 // - (선택) parentPageId 또는 parentTitle로 하위 페이지 생성 가능
-// - scope="parent" → 상위 페이지 수정
-// - scope="child"  → 하위 페이지 중 title 일치하는 것 수정
-// - 동일 제목 페이지 존재 시 update, 없으면 create
-//
+// - 생성된 Confluence 페이지의 URL을 함께 반환
 
 const fetch = require("node-fetch");
 
@@ -39,15 +36,15 @@ function normalizeWikiDomain(domain) {
 // ==========================
 // 🔧 content에 포함된 제목 제거 처리
 // ==========================
+// - Markdown 헤더 또는 HTML <h*> 태그 기반 정제
 function removeTitleFromContent(title, content) {
-  if (!content) return "";
   const lines = content.split("\n").map((line) => line.trim());
   const firstLine = lines[0].replace(/^#+\s*|<h[1-6]>|<\/h[1-6]>/gi, "").trim();
   return firstLine === title.trim() ? lines.slice(1).join("\n").trim() : content;
 }
 
 // ==========================
-// 🔍 parentTitle로 Confluence 페이지 ID 검색
+// 🔍 parentTitle로 Confluence 페이지 ID 검색 함수
 // ==========================
 async function getParentPageIdFromTitle(title, wikiBase, email, token, spaceKey) {
   const query = encodeURIComponent(`type=page AND space="${spaceKey}" AND title="${title}"`);
@@ -66,45 +63,10 @@ async function getParentPageIdFromTitle(title, wikiBase, email, token, spaceKey)
 }
 
 // ==========================
-// 🔍 제목으로 Confluence 페이지 검색 (정확 매칭)
-// ==========================
-async function findPageByTitle(title, wikiBase, email, token, spaceKey) {
-  const query = encodeURIComponent(`type=page AND space="${spaceKey}" AND title="${title}"`);
-  const url = `${wikiBase}/rest/api/content/search?cql=${query}`;
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${email}:${token}`).toString("base64"),
-      Accept: "application/json",
-    },
-  });
-
-  const data = await res.json();
-  return data.results?.[0] || null;
-}
-
-// ==========================
-// 🔍 하위 페이지 목록 불러오기
-// ==========================
-async function getChildPages(parentId, wikiBase, email, token) {
-  const url = `${wikiBase}/rest/api/content/${parentId}/child/page?limit=50`;
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${email}:${token}`).toString("base64"),
-      Accept: "application/json",
-    },
-  });
-
-  const data = await res.json();
-  return data.results || [];
-}
-
-// ==========================
 // ✅ 메인 API 엔드포인트
 // ==========================
 module.exports = async (req, res) => {
-  // 📋 공통 응답 헤더
+  // 📋 공통 응답 헤더 설정
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -112,7 +74,7 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
 
-  // 🔐 환경 변수
+  // 🔐 필수 환경 변수 확인
   const {
     CONFLUENCE_EMAIL,
     CONFLUENCE_API_TOKEN,
@@ -132,27 +94,25 @@ module.exports = async (req, res) => {
   const endpoint = `${wikiBase}/rest/api/content`;
 
   try {
-    // 📦 요청 바디
+    // 📦 요청 바디 파싱
     const body = await readJSON(req);
     const {
       title,
       content,
       parentPageId: bodyParentPageId,
       parentTitle,
-      scope = "parent", // 기본 parent 수정
-      childTitle,
     } = body || {};
 
-    // 📛 제목 필수
+    // 📛 제목 필수 확인
     const safeTitle = (title || "").toString().trim();
     if (!safeTitle) {
       return res.status(400).json({ error: "Missing 'title'" });
     }
 
-    // 🧹 content 정리 (타이틀 중복 제거)
+    // 🧹 content에서 title 중복 제거
     const cleanedContent = removeTitleFromContent(safeTitle, content);
 
-    // 🔍 부모 ID 처리
+    // 🔍 부모 페이지 ID 우선순위 처리 (요청값 > ENV > title 검색)
     let parentPageId = (bodyParentPageId || CONFLUENCE_PARENT_PAGE_ID || "").toString().trim();
     if (!parentPageId && parentTitle) {
       parentPageId = await getParentPageIdFromTitle(
@@ -164,84 +124,59 @@ module.exports = async (req, res) => {
       );
     }
 
-    // ==========================
-    // ✏️ Upsert 로직
-    // ==========================
-    let targetPage = await findPageByTitle(safeTitle, wikiBase, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN, CONFLUENCE_SPACE_KEY);
+    // 🧾 최종 요청 페이로드 구성
+    // - title: 페이지 제목
+    // - space: 저장할 공간 key
+    // - ancestors: (선택) 부모 페이지 ID 배열 → 하위 페이지 생성
+    // - body.storage: HTML 기반 콘텐츠 저장 영역
+    const payload = {
+      type: "page",
+      title: safeTitle,
+      space: { key: CONFLUENCE_SPACE_KEY },
+      ...(parentPageId ? { ancestors: [{ id: parentPageId }] } : {}),
+      body: {
+        storage: {
+          value: cleanedContent || "<p>Empty content</p>",
+          representation: "storage",
+        },
+      },
+    };
 
-    if (scope === "child" && parentPageId && childTitle) {
-      // 🔍 child 수정 모드
-      const children = await getChildPages(parentPageId, wikiBase, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN);
-      targetPage = children.find(c => c.title === childTitle);
+    // 🌐 Confluence API 호출
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${CONFLUENCE_EMAIL}:${CONFLUENCE_API_TOKEN}`).toString("base64"),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    // ⚠️ 실패 처리
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "Failed to save to Confluence",
+        detail: data,
+        used: {
+          endpoint,
+          spaceKey: CONFLUENCE_SPACE_KEY,
+          parentPageId: parentPageId || null,
+        },
+      });
     }
 
-    if (targetPage) {
-      // 기존 페이지 있으면 UPDATE
-      const updateUrl = `${wikiBase}/rest/api/content/${targetPage.id}`;
-      const response = await fetch(updateUrl, {
-        method: "PUT",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${CONFLUENCE_EMAIL}:${CONFLUENCE_API_TOKEN}`).toString("base64"),
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          id: targetPage.id,
-          type: "page",
-          title: scope === "child" ? childTitle : safeTitle,
-          space: { key: CONFLUENCE_SPACE_KEY },
-          body: {
-            storage: {
-              value: cleanedContent || "<p>Empty content</p>",
-              representation: "storage",
-            },
-          },
-          version: { number: (targetPage.version?.number || 0) + 1 },
-        }),
-      });
+    // 🔗 생성된 페이지 링크 반환
+    const baseLink = (data && data._links && data._links.base) || wikiBase.replace(/\/wiki$/, "");
+    const webui = data && data._links && data._links.webui;
+    const pageUrl = baseLink && webui ? baseLink + webui : null;
 
-      const data = await response.json();
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to update Confluence", detail: data });
-      }
-
-      const pageUrl = `${wikiBase.replace(/\/wiki$/, "")}${data._links.webui}`;
-      return res.status(200).json({ ok: true, updated: true, id: data.id, links: { webui: pageUrl } });
-    } else {
-      // 없으면 CREATE
-      const payload = {
-        type: "page",
-        title: safeTitle,
-        space: { key: CONFLUENCE_SPACE_KEY },
-        ...(parentPageId ? { ancestors: [{ id: parentPageId }] } : {}),
-        body: {
-          storage: {
-            value: cleanedContent || "<p>Empty content</p>",
-            representation: "storage",
-          },
-        },
-      };
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${CONFLUENCE_EMAIL}:${CONFLUENCE_API_TOKEN}`).toString("base64"),
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        return res.status(response.status).json({ error: "Failed to create Confluence page", detail: data });
-      }
-
-      const pageUrl = `${wikiBase.replace(/\/wiki$/, "")}${data._links.webui}`;
-      return res.status(200).json({ ok: true, updated: false, id: data.id, links: { webui: pageUrl } });
-    }
+    // 🎉 최종 성공 응답 반환
+    return res.status(200).json({ ok: true, id: data.id, links: { webui: pageUrl } });
   } catch (err) {
-    console.error("Confluence Save/Update API error:", err);
+    console.error("Confluence API error:", err);
     return res.status(500).json({ error: "Unexpected server error", detail: err.message });
   }
 };
