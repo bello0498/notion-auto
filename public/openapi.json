@@ -258,5 +258,89 @@
         }
       }
     }
+    "/api/search": {
+      "post": {
+        "operationId": "searchNotion",
+        "summary": "Search pages in Notion DB",
+        "description": "Search Notion Database pages by title, tags, or status.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "검색할 문자열 (제목에 포함)"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "검색할 태그 목록"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "선택적 상태 필터"
+                  }
+                },
+                "example": {
+                  "query": "스토리",
+                  "tags": ["회의"],
+                  "status": "진행 중"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "검색 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ok", "results"],
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "title": { "type": "string" },
+                          "url": { "type": "string" },
+                          "tags": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          },
+                          "status": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "ok": true,
+                  "results": [
+                    {
+                      "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                      "title": "스토리 페이지",
+                      "url": "https://www.notion.so/xxxxxxxxxxxxxxxx",
+                      "tags": ["기획", "회의"],
+                      "status": "진행 중"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "description": "잘못된 요청 (query 누락)" },
+          "500": { "description": "검색 실패 (서버 오류 또는 Notion API 오류)" }
+        }
+      }
+    }
   }
 }
