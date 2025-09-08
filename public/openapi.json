@@ -64,13 +64,63 @@
                   "summary": {
                     "type": "string",
                     "description": "요약 (응답 메시지 및 content 미리보기용)"
+                  },
+                  "parentPageId": {
+                    "type": "string",
+                    "description": "상위 페이지 ID (있으면 하위 페이지로 저장)"
+                  },
+                  "blocksTarget": {
+                    "type": "string",
+                    "enum": ["page", "db"],
+                    "default": "page",
+                    "description": "블록 저장 대상: 별도 페이지('page') 또는 DB row 자체('db')"
+                  },
+                  "contentToProperty": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "본문 content를 DB rich_text 속성에도 저장할지 여부"
+                  },
+                  "children": {
+                    "type": "array",
+                    "description": "하위 페이지 배열 (재귀적으로 children 포함 가능)",
+                    "items": {
+                      "type": "object",
+                      "required": ["title", "content"],
+                      "properties": {
+                        "title": { "type": "string" },
+                        "content": { "type": "string" },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "date": { "type": "string" },
+                        "tags": {
+                          "type": "array",
+                          "items": { "type": "string" }
+                        },
+                        "status": { "type": "string" },
+                        "children": {
+                          "$ref": "#/paths/~1api~1save/post/requestBody/content/application~1json/schema/properties/children"
+                        }
+                      }
+                    }
                   }
                 },
                 "example": {
-                  "title": "회의 정리",
-                  "content": "- 안건1\n- 안건2",
-                  "tags": ["회의", "기획"],
-                  "status": "진행 중"
+                  "title": "포트폴리오 구조 설계",
+                  "content": "# 챗봇형 포트폴리오\n인터랙션 중심...",
+                  "tags": ["포트폴리오", "UI설계"],
+                  "status": "작성중",
+                  "children": [
+                    {
+                      "title": "와이어프레임 시안",
+                      "content": "## 구조\n- 진입: 버튼 2개\n- 챗봇형 → 마크다운 + 카드\n"
+                    },
+                    {
+                      "title": "컴포넌트 구조",
+                      "content": "- Layout\n- ChatbotWindow\n- CardGrid"
+                    }
+                  ]
                 }
               }
             }
