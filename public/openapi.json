@@ -257,12 +257,12 @@
           "500": { "description": "Confluence API 오류" }
         }
       }
-    }
+    },
     "/api/search": {
       "post": {
         "operationId": "searchNotion",
-        "summary": "Search pages in Notion DB",
-        "description": "Search Notion Database pages by title, tags, or status.",
+        "summary": "Search pages or DB entries in Notion",
+        "description": "Search Notion by mode: 'page' (workspace-wide page search) or 'db' (specific DB filter).",
         "requestBody": {
           "required": true,
           "content": {
@@ -275,20 +275,25 @@
                     "type": "string",
                     "description": "검색할 문자열 (제목에 포함)"
                   },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["page", "db"],
+                    "default": "page",
+                    "description": "검색 모드 선택 (page = 전체 페이지 검색, db = DB 속성 검색)"
+                  },
                   "tags": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "검색할 태그 목록"
+                    "description": "DB 검색 시 태그 필터"
                   },
                   "status": {
                     "type": "string",
-                    "description": "선택적 상태 필터"
+                    "description": "DB 검색 시 상태 필터"
                   }
                 },
                 "example": {
                   "query": "스토리",
-                  "tags": ["회의"],
-                  "status": "진행 중"
+                  "mode": "page"
                 }
               }
             }
@@ -310,13 +315,15 @@
                         "type": "object",
                         "properties": {
                           "id": { "type": "string" },
+                          "type": { "type": "string" },
                           "title": { "type": "string" },
                           "url": { "type": "string" },
                           "tags": {
                             "type": "array",
                             "items": { "type": "string" }
                           },
-                          "status": { "type": "string" }
+                          "status": { "type": "string" },
+                          "lastEdited": { "type": "string" }
                         }
                       }
                     }
@@ -327,10 +334,12 @@
                   "results": [
                     {
                       "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                      "type": "page",
                       "title": "스토리 페이지",
                       "url": "https://www.notion.so/xxxxxxxxxxxxxxxx",
-                      "tags": ["기획", "회의"],
-                      "status": "진행 중"
+                      "tags": ["기획"],
+                      "status": "진행 중",
+                      "lastEdited": "2025-09-08T11:00:00Z"
                     }
                   ]
                 }
@@ -342,5 +351,6 @@
         }
       }
     }
+
   }
 }

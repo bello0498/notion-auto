@@ -2,9 +2,10 @@
 // api/search.js
 // ==========================
 //
-// 🔍 기능: Notion 내 특정 쿼리(query)로 페이지 검색
-// - 제목(title), URL, 태그(tags), 상태(status) 등 기준으로 검색
-// - 응답에서 기본 정보(title, url, pageId, tags 등) 반환
+// 🔍 기능: Notion 검색 API (mode에 따라 Page 검색 / DB 검색 분기)
+// - mode: "page" → notion.search (워크스페이스 전체 페이지)
+// - mode: "db"   → databases.query (특정 DB 속성 기반)
+// - 응답: 기본 정보(id, title, url, tags, status, lastEdited 등)
 //
 
 const { Client } = require("@notionhq/client");
@@ -22,7 +23,7 @@ async function readJSON(req) {
   }
 }
 
-module.exports = async (req, res) => { 
+module.exports = async (req, res) => {
   // 🔸 CORS + 메서드 검사
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -33,66 +34,70 @@ module.exports = async (req, res) => {
 
   // 🔸 환경 변수 검사
   const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
-  if (!NOTION_TOKEN || !NOTION_DATABASE_ID)
-    return res.status(500).json({ error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
+  if (!NOTION_TOKEN) return res.status(500).json({ error: "Missing NOTION_TOKEN" });
 
   const notion = new Client({ auth: NOTION_TOKEN });
 
   try {
     // 🔸 입력 파싱
     const body = await readJSON(req);
-    const { query, tags = [], status = null } = body || {};
+    const { query, tags = [], status = null, mode = "page" } = body || {};
     if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Missing or invalid 'query'" });
     }
 
-    // 🔸 검색 필터 정의
-    const filters = [
-      {
-        property: "title",
-        title: {
-          contains: query
-        }
+    let out = [];
+
+    if (mode === "db") {
+      if (!NOTION_DATABASE_ID) return res.status(500).json({ error: "Missing NOTION_DATABASE_ID" });
+
+      // 🔹 DB 검색
+      const filters = [{ property: "title", title: { contains: query } }];
+      if (Array.isArray(tags) && tags.length) {
+        filters.push({
+          property: "tags",
+          multi_select: { contains: tags[0] }
+        });
       }
-    ];
+      if (status) {
+        filters.push({ property: "status", select: { equals: status } });
+      }
 
-    if (Array.isArray(tags) && tags.length) {
-      filters.push({
-        property: "tags",
-        multi_select: {
-          contains: tags[0]  // 단일 태그만 필터 (간단 버전)
-        }
+      const result = await notion.databases.query({
+        database_id: toUuid(NOTION_DATABASE_ID),
+        filter: filters.length === 1 ? filters[0] : { and: filters },
+        page_size: 10,
       });
+
+      out = (result?.results || []).map(r => ({
+        id: r.id,
+        type: "db",
+        title: r.properties?.title?.title?.[0]?.plain_text || "(제목 없음)",
+        url: r.url,
+        tags: r.properties?.tags?.multi_select?.map(t => t.name),
+        status: r.properties?.status?.select?.name || null,
+        lastEdited: r.last_edited_time
+      }));
+
+    } else {
+      // 🔹 페이지 검색
+      const result = await notion.search({
+        query,
+        sort: { direction: "descending", timestamp: "last_edited_time" },
+        page_size: 10
+      });
+
+      out = (result?.results || []).map(r => ({
+        id: r.id,
+        type: r.object, // "page" | "database"
+        title: r.properties?.title?.title?.[0]?.plain_text
+          || r.properties?.Name?.title?.[0]?.plain_text
+          || "(제목 없음)",
+        url: r.url,
+        lastEdited: r.last_edited_time
+      }));
     }
 
-    if (status) {
-      filters.push({
-        property: "status",
-        select: {
-          equals: status
-        }
-      });
-    }
-
-    // 🔸 DB 쿼리 실행
-    const result = await notion.databases.query({
-      database_id: toUuid(NOTION_DATABASE_ID),
-      filter: filters.length === 1
-        ? filters[0]
-        : { and: filters },
-      page_size: 10,
-    });
-
-    // 🔸 응답 데이터 정리
-    const out = (result?.results || []).map((r) => ({
-      id: r.id,
-      title: r.properties?.title?.title?.[0]?.plain_text || "(제목 없음)",
-      url: r.url,
-      tags: r.properties?.tags?.multi_select?.map((t) => t.name),
-      status: r.properties?.status?.select?.name || null,
-    }));
-
-    // 🔸 최종 응답 반환
     return res.status(200).json({ ok: true, results: out });
 
   } catch (err) {
