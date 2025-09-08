@@ -22,7 +22,7 @@ async function readJSON(req) {
   }
 }
 
-module.exports = async (req, res) => {
+module.exports = async (req, res) => { 
   // 🔸 CORS + 메서드 검사
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
